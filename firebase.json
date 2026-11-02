@@ -1,0 +1,11 @@
+{
+  "hosting": {
+    "site": "calculator-credit",
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

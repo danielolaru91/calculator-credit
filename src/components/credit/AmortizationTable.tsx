@@ -1,0 +1,280 @@
+import { useState, useMemo } from 'react';
+
+import type { CreditInstallment } from '../../types/credit';
+import { formatLei } from '../../lib/credit/numberParser';
+
+import {
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
+} from 'lucide-react';
+
+type AmortizationTableProps = {
+  installments: CreditInstallment[];
+};
+
+type SortKey = keyof CreditInstallment;
+type SortDir = 'asc' | 'desc';
+
+const ROWS_PER_PAGE = 15;
+
+function formatOptionalLei(value?: number): string {
+  return value !== undefined && value > 0 ? formatLei(value) : '—';
+}
+
+export function AmortizationTable({ installments }: AmortizationTableProps) {
+  const [sortKey, setSortKey] = useState<SortKey>('installmentNumber');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState('');
+
+  const sorted = useMemo(() => {
+    const copy = [...installments];
+    copy.sort((a, b) => {
+      const aVal = a[sortKey] ?? 0;
+      const bVal = b[sortKey] ?? 0;
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    });
+    return copy;
+  }, [installments, sortKey, sortDir]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return sorted;
+    const q = search.toLowerCase();
+    return sorted.filter(row =>
+      Object.values(row).some(v =>
+        String(v ?? '').toLowerCase().includes(q)
+      )
+    );
+  }, [sorted, search]);
+
+  const totalPages = Math.ceil(filtered.length / ROWS_PER_PAGE);
+  const paged = filtered.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
+  // Platile anticipate nu sunt rate — la fel ca in sumar, nu se numara.
+  const rateCount = filtered.filter(r => !r.isExtraPayment).length;
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ column }: { column: SortKey }) => {
+    if (sortKey !== column) return null;
+    return sortDir === 'asc' ? (
+      <ChevronUp className="inline h-3 w-3" />
+    ) : (
+      <ChevronDown className="inline h-3 w-3" />
+    );
+  };
+
+  // Randurile de plata anticipata deja existente in scadentar (ex: BRD)
+  // sunt afisate la plata anticipata, nu la principal.
+  const displayEarlyPayment = (row: CreditInstallment): number | undefined => {
+    if (row.earlyPayment !== undefined && row.earlyPayment > 0) return row.earlyPayment;
+    if (row.isExtraPayment && row.principal !== undefined && row.principal > 0) {
+      return row.principal;
+    }
+    return undefined;
+  };
+  const displayPrincipal = (row: CreditInstallment): number | undefined =>
+    row.isExtraPayment ? undefined : row.principal;
+
+  // Detect which columns have data
+  const hasDate = installments.some(i => i.date);
+  const hasPayment = installments.some(i => i.payment !== undefined && i.payment > 0);
+  const hasPrincipal = installments.some(
+    i => (displayPrincipal(i) ?? 0) > 0
+  );
+  const hasEarlyPayment = installments.some(
+    i => (displayEarlyPayment(i) ?? 0) > 0
+  );
+  const hasInterest = installments.some(i => i.interest !== undefined && i.interest > 0);
+  const hasFees = installments.some(i => i.fees !== undefined && i.fees > 0);
+  const hasBalance = installments.some(i => i.remainingBalance !== undefined && i.remainingBalance > 0);
+
+  const thClass =
+    'cursor-pointer select-none whitespace-nowrap px-3 py-3 text-left font-semibold text-slate-600 hover:text-slate-900';
+  const tdClass = 'whitespace-nowrap px-3 py-2.5 text-slate-700';
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-200 p-4">
+        <h3 className="text-lg font-semibold text-slate-900">Scadențar complet</h3>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Caută..."
+            value={search}
+            onChange={e => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            className="rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm
+              focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className={thClass} onClick={() => handleSort('installmentNumber')}>
+                Nr. rată <SortIcon column="installmentNumber" />
+              </th>
+              {hasDate && (
+                <th className={thClass} onClick={() => handleSort('date')}>
+                  Data <SortIcon column="date" />
+                </th>
+              )}
+              {hasPayment && (
+                <th className={thClass} onClick={() => handleSort('payment')}>
+                  Total Plată <SortIcon column="payment" />
+                </th>
+              )}
+              {hasEarlyPayment && (
+                <th className={thClass} onClick={() => handleSort('earlyPayment')}>
+                  Plată anticipată <SortIcon column="earlyPayment" />
+                </th>
+              )}
+              {hasPrincipal && (
+                <th className={thClass} onClick={() => handleSort('principal')}>
+                  Principal <SortIcon column="principal" />
+                </th>
+              )}
+              {hasInterest && (
+                <th className={thClass} onClick={() => handleSort('interest')}>
+                  Dobândă <SortIcon column="interest" />
+                </th>
+              )}
+              {hasFees && (
+                <th className={thClass} onClick={() => handleSort('fees')}>
+                  Asigurare <SortIcon column="fees" />
+                </th>
+              )}
+              {hasBalance && (
+                <th className={thClass} onClick={() => handleSort('remainingBalance')}>
+                  Sold rămas <SortIcon column="remainingBalance" />
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {paged.map((row, i) => (
+              <tr
+                key={i}
+                className="border-b border-slate-100 transition-colors hover:bg-slate-50/50 last:border-0"
+              >
+                <td className={tdClass}>
+                  {row.isExtraPayment ? '' : (row.installmentNumber ?? '—')}
+                </td>
+                {hasDate && <td className={tdClass}>{row.date ?? '—'}</td>}
+                {hasPayment && (
+                  <td className={tdClass}>
+                    {row.payment !== undefined && row.payment > 0 ? formatLei(row.payment) : '—'}
+                  </td>
+                )}
+                {hasEarlyPayment && (
+                  <td className={tdClass}>{formatOptionalLei(displayEarlyPayment(row))}</td>
+                )}
+                {hasPrincipal && (
+                  <td className={tdClass}>{formatOptionalLei(displayPrincipal(row))}</td>
+                )}
+                {hasInterest && (
+                  <td className={tdClass}>
+                    {row.interest !== undefined && row.interest > 0 ? formatLei(row.interest) : '—'}
+                  </td>
+                )}
+                {hasFees && (
+                  <td className={tdClass}>
+                    {row.fees !== undefined && row.fees > 0 ? formatLei(row.fees) : '—'}
+                  </td>
+                )}
+                {hasBalance && (
+                  <td className={tdClass}>
+                    {row.remainingBalance !== undefined
+                      ? formatLei(row.remainingBalance)
+                      : '—'}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+          <span className="text-sm text-slate-500">
+            {rateCount} rate · Pagina {page + 1} din {totalPages}
+          </span>
+<div className="flex gap-1">
+  {/* Prima pagină */}
+  <button
+    type="button"
+    onClick={() => setPage(0)}
+    disabled={page === 0}
+    aria-label="Prima pagină"
+    title="Prima pagină"
+    className="rounded-lg border border-slate-300 p-1.5 text-slate-700
+      transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <ChevronsLeft className="h-4 w-4" />
+  </button>
+
+  {/* Pagina anterioară */}
+  <button
+    type="button"
+    onClick={() => setPage(p => Math.max(0, p - 1))}
+    disabled={page === 0}
+    aria-label="Pagina anterioară"
+    title="Pagina anterioară"
+    className="rounded-lg border border-slate-300 p-1.5 text-slate-700
+      transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <ChevronLeft className="h-4 w-4" />
+  </button>
+
+  {/* Pagina următoare */}
+  <button
+    type="button"
+    onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+    disabled={page >= totalPages - 1}
+    aria-label="Pagina următoare"
+    title="Pagina următoare"
+    className="rounded-lg border border-slate-300 p-1.5 text-slate-700
+      transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <ChevronRight className="h-4 w-4" />
+  </button>
+
+  {/* Ultima pagină */}
+  <button
+    type="button"
+    onClick={() => setPage(totalPages - 1)}
+    disabled={page >= totalPages - 1}
+    aria-label="Ultima pagină"
+    title="Ultima pagină"
+    className="rounded-lg border border-slate-300 p-1.5 text-slate-700
+      transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <ChevronsRight className="h-4 w-4" />
+  </button>
+</div>
+        </div>
+      )}
+    </div>
+  );
+}
